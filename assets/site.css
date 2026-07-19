@@ -298,3 +298,7 @@ article .carousel{position:relative;margin:1.8em 0}
   transition:background .2s ease;
 }
 .more-posts:hover{background:var(--accent-soft)}
+
+@media (max-width:640px){
+  footer.site{justify-content:center;text-align:center}
+}
