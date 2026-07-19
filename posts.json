@@ -1,0 +1,42 @@
+[
+  {
+    "slug": "chialo",
+    "title": "加羅湖",
+    "date": "2025-03-22",
+    "tags": ["台灣の山"],
+    "description": "在碩二下的第五個週末要幹麻?去爬山!",
+    "thumb": "img/chialo/background.jpg"
+  },
+  {
+    "slug": "jiaming",
+    "title": "嘉明湖",
+    "date": "2024-08-30",
+    "tags": ["台灣の山"],
+    "description": "第一次聽說嘉明湖是在高中的地理課上,大學加入山服後一直很想來爬;過了四年,終於在研究所畢業前圓夢了!",
+    "thumb": "img/jiaming/background.jpg"
+  },
+  {
+    "slug": "yogo",
+    "title": "賤岳",
+    "date": "2024-01-07",
+    "tags": ["碩一下,休一下"],
+    "description": "原本計劃前往伊吹山欣賞雪景,但因為行程太趕就取消了。為了滿足賞雪的心願,一早便從京都出發,不知目的地沿著琵琶湖東岸一路向北,沒想到誤打誤撞來到曾經的古戰場。(背景是余吳湖)",
+    "thumb": "img/yogo/background.jpg"
+  },
+  {
+    "slug": "tazawako",
+    "title": "田澤湖",
+    "date": "2023-08-08",
+    "tags": ["一個人的畢業旅行"],
+    "description": "2023年8月,有幸參加了日本仙台的研討會,順水推舟就給自己安排了畢業旅行。畢旅的最後一站,來到日本最深的湖泊騎自行車!",
+    "thumb": "img/tazawako/background.jpg"
+  },
+  {
+    "slug": "okama",
+    "title": "藏王御釜",
+    "date": "2023-08-03",
+    "tags": ["一個人的畢業旅行"],
+    "description": "2023年8月,有幸參加了日本仙台的研討會,順水推舟就給自己安排了畢業旅行。畢旅的第一站來到了藏王御釜,一睹令人屏息的火山口湖!",
+    "thumb": "img/okama/background.jpg"
+  }
+]

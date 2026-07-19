@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>遊記 — 林鈞唯</title>
+  <meta name="description" content="山徑與長路的記述 — 林鈞唯的登山與旅行遊記">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600&family=Noto+Sans+TC:wght@300;400;500&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="assets/site.css">
+</head>
+
+<body>
+
+  <header class="topbar">
+    <a class="brand" href="./">TOPO</a>
+    <nav>
+      <a href="./">遊記</a>
+      <a href="#about">關於</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <canvas id="cat-hero"></canvas>
+    <div class="hero-text">
+      <h1>遊記</h1>
+      <p class="sub">希望你會喜歡攀岩貓貓</p>
+    </div>
+  </section>
+  <p class="hero-cap">三ツ峠の屏風岩を登る猫たちを想像して</p>
+
+  <div class="filter-bar">
+    <button class="tag-toggle" id="tag-toggle" type="button">標籤 <span class="chev">▾</span></button>
+    <div class="tags" id="tag-filter"></div>
+  </div>
+
+  <main class="grid" id="post-grid"></main>
+
+  <!-- ── 關於(文字左、照片右)────────────────── -->
+  <section class="about" id="about">
+    <div class="about-text">
+      <p>謝謝你點進來!</p>
+      <p>我喜歡拍照,也喜歡出去玩,這裡是我的秘密基地。</p>
+      <p>累了就來這裡休息一下,回味自己走過的地方。</p>
+      <p>最近喜歡攀岩!</p>
+      <div class="btns">
+        <a class="btn" href="https://www.instagram.com/chun_wei_0105/" rel="noopener">INSTAGRAM</a>
+        <a class="btn solid" href="https://jimmy-xavier.github.io/photobook/">攝影書 CHRONO</a>
+      </div>
+    </div>
+    <div class="about-photo">
+      <img src="img/about.jpg" alt="林鈞唯" loading="lazy">
+    </div>
+  </section>
+
+  <footer class="site">
+    <span>SANCTUM SANCTORUM</span>
+    <span>© 2026 — 林鈞唯 Jimmy Lin</span>
+  </footer>
+
+  <script src="assets/cats.js"></script>
+  <script src="assets/site.js"></script>
+</body>
+
+</html>
