@@ -253,9 +253,116 @@
     });
   }
 
+  /* ---------- 文章頁:爬繩貓(閱讀進度)----------
+     一條垂直的繩,一隻迷你橘貓抓著繩隨閱讀進度往上爬,讀完登頂揮手。
+     桌機:貼在 TOC 目錄旁;手機:固定在螢幕左緣。            */
+  function initRopeCat() {
+    const article = document.querySelector('article');
+    if (!article) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'rope-cat';
+    wrap.innerHTML = '<canvas width="144" height="576"></canvas>';
+    document.body.appendChild(wrap);
+    const cv = wrap.querySelector('canvas');
+    const c = cv.getContext('2d');
+    c.scale(2, 2);                          // @2x, 邏輯尺寸 30×120
+
+    const RW = 72, RH = 288;               // 繩區邏輯寬高(放大版)
+    const ropeX = 36;
+
+    function head(hx, hy) {
+      c.fillStyle = '#e8944e';             // 耳朵
+      c.beginPath(); c.moveTo(hx - 9.7, hy - 4.9); c.lineTo(hx - 15.1, hy - 18);
+      c.lineTo(hx - 3.4, hy - 11.2); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(hx + 9.7, hy - 4.9); c.lineTo(hx + 15.1, hy - 18);
+      c.lineTo(hx + 3.4, hy - 11.2); c.closePath(); c.fill();
+      c.beginPath(); c.arc(hx, hy, 12.2, 0, 7); c.fill();
+      c.fillStyle = '#d94f4f';             // 小岩盔
+      c.beginPath(); c.arc(hx, hy - 2.5, 13, Math.PI, 0); c.fill();
+      c.fillRect(hx - 13, hy - 3.4, 26, 3.4);
+      c.fillStyle = '#4a4238';             // 眼睛
+      c.beginPath(); c.arc(hx - 4.3, hy + 4, 2.2, 0, 7); c.fill();
+      c.beginPath(); c.arc(hx + 4.3, hy + 4, 2.2, 0, 7); c.fill();
+    }
+
+    function draw(pr, frame) {
+      c.clearRect(0, 0, RW, RH);
+      // 繩(紅色,貫穿整條)
+      c.strokeStyle = '#e2635f'; c.lineWidth = 6.5; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(ropeX, 4); c.lineTo(ropeX, RH - 4); c.stroke();
+      // 頂端固定點
+      c.strokeStyle = '#7d838e'; c.lineWidth = 5.4;
+      c.beginPath(); c.arc(ropeX, 9, 6.1, 0, 7); c.stroke();
+
+      // 貓的高度隨進度;登頂時再往下留一點,耳朵才不會被上緣切掉
+      const cy = 34 + (RH - 72) * (1 - pr) + (pr >= .95 ? 16 : 0);
+      const top = pr >= .95;
+      if (top) {
+        c.strokeStyle = '#e8944e'; c.lineWidth = 7.2;    // 尾(最底層,先畫)
+        c.beginPath(); c.moveTo(ropeX - 7.2, cy + 20); c.quadraticCurveTo(ropeX - 20, cy + 25, ropeX - 17, cy + 34); c.stroke();
+        c.fillStyle = '#e8944e';                         // 身體
+        c.beginPath(); c.ellipse(ropeX, cy + 9.7, 15.8, 18.2, 0, 0, 7); c.fill();
+        c.strokeStyle = '#c97231'; c.lineWidth = 6.3;    // 揮手
+        c.beginPath(); c.moveTo(ropeX + 9.7, cy - 2.5); c.lineTo(ropeX + 21.6, cy - 20); c.stroke();
+        head(ropeX, cy - 20);
+      } else {
+        const up = frame ? 6.3 : 0;
+        c.strokeStyle = '#e8944e'; c.lineWidth = 7.2;    // 尾(最底層,先畫)
+        c.beginPath(); c.moveTo(ropeX - 4.9, cy + 20); c.quadraticCurveTo(ropeX - 17.1, cy + 27, ropeX - 14.4, cy + 36); c.stroke();
+        c.strokeStyle = '#c97231'; c.lineWidth = 6.3;    // 抓繩的手/踩繩的腳,交替
+        c.beginPath(); c.moveTo(ropeX - 4.9, cy - 7.2); c.lineTo(ropeX, cy - 21.6 + up); c.stroke();
+        c.beginPath(); c.moveTo(ropeX + 4.9, cy - 7.2); c.lineTo(ropeX, cy - 17.1 - up); c.stroke();
+        c.beginPath(); c.moveTo(ropeX - 7.2, cy + 14.4); c.lineTo(ropeX - 14.4, cy + 27 - up); c.stroke();
+        c.beginPath(); c.moveTo(ropeX + 7.2, cy + 14.4); c.lineTo(ropeX + 12.2, cy + 28.8 + up); c.stroke();
+        c.fillStyle = '#e8944e';                         // 身體(貼著繩)
+        c.beginPath(); c.ellipse(ropeX + 2.5, cy, 13.3, 19.4, 0, 0, 7); c.fill();
+        c.fillStyle = '#c97231';                         // 虎斑
+        [-9.7, 0, 9.7].forEach(sy => c.fillRect(ropeX - 4.9, cy + sy, 14.4, 3.6));
+        head(ropeX + 2.5, cy - 24.3);
+      }
+    }
+
+    let frame = 0, last = -1;
+    function onScroll() {
+      const r = article.getBoundingClientRect();
+      // 進度:文章頂端進入視窗 → 文章底端離開視窗,對應 0 → 1
+      const total = Math.max(1, r.height - innerHeight * .5);
+      const pr = Math.min(1, Math.max(0, (innerHeight * .45 - r.top) / total));
+      if (Math.abs(pr - last) > .014) { frame ^= 1; last = pr; }   // 值越大 → 擺動越慢
+      draw(pr, frame);
+    }
+    addEventListener('scroll', onScroll, { passive: true });
+    addEventListener('resize', onScroll, { passive: true });
+    onScroll();
+  }
+
+  /* ---------- 載入畫面:就緒後淡出 ----------
+     最少顯示 0.6 秒(避免一閃而過),最多 2.6 秒保底(照片再慢也不卡住)。 */
+  function initLoader() {
+    const el = document.getElementById('loader');
+    if (!el) return;
+    const t0 = performance.now();
+    let hidden = false;
+    const hide = () => {
+      if (hidden) return;
+      hidden = true;
+      const wait = Math.max(0, 600 - (performance.now() - t0));
+      setTimeout(() => {
+        el.classList.add('done');
+        setTimeout(() => el.remove(), 700);   // 淡出後移除,不擋互動
+      }, wait);
+    };
+    if (document.readyState === 'complete') hide();
+    else addEventListener('load', hide);
+    setTimeout(hide, 2600);
+  }
+
   document.addEventListener('DOMContentLoaded', () => {
+    initLoader();
     setFavicon();
     buildTOC();
+    initRopeCat();
     initMaps();
     initCarousels();
     initIndex();

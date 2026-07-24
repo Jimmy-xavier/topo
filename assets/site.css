@@ -196,10 +196,10 @@ article .trip-map{
 .toc li{margin:.15rem 0}
 .toc a{
   display:block;color:var(--muted);padding:.28rem .9rem;
-  border-left:2px solid var(--line);line-height:1.5;
+  line-height:1.5;
 }
 .toc a:hover{color:var(--accent-deep);text-decoration:none}
-.toc a.active{color:var(--accent-deep);border-left-color:var(--accent);font-weight:600}
+.toc a.active{color:var(--accent-deep);font-weight:600}
 .toc .lv3 a{padding-left:1.8rem;font-size:.8rem}
 
 /* 上一頁/回列表 */
@@ -301,4 +301,51 @@ article .carousel{position:relative;margin:1.8em 0}
 
 @media (max-width:640px){
   footer.site{justify-content:center;text-align:center}
+}
+
+/* ── 手機版 hero:文字移到畫布上方,場景完整呈現 ── */
+@media (max-width:640px){
+  .hero{display:flex;flex-direction:column;gap:.9rem}
+  .hero .hero-text{position:static;transform:none;order:-1;padding:.4rem .2rem 0}
+  .hero h1{font-size:1.7rem;letter-spacing:.35em}
+  .hero .sub{margin-top:.45rem;font-size:.8rem;letter-spacing:.14em}
+  .hero canvas{height:min(96vw,370px)}
+  .hero-cap{font-size:.68rem;letter-spacing:.12em;text-align:center}
+}
+
+/* ── 爬繩貓(閱讀進度)── */
+.rope-cat{
+  position:fixed;top:50%;transform:translateY(-50%);
+  right:calc((100vw - 72rem) / 2 - 3.4rem);   /* 回到右側外緣 */
+  width:72px;height:288px;z-index:20;pointer-events:none;
+}
+.rope-cat canvas{width:72px;height:288px}
+@media (max-width:1200px){
+  .rope-cat{right:.4rem}
+}
+@media (max-width:900px){
+  .rope-cat{right:auto;left:.3rem}
+}
+
+/* ── 載入畫面(TOPO splash)── */
+#loader{
+  position:fixed;inset:0;z-index:999;
+  background:var(--paper);
+  display:flex;align-items:center;justify-content:center;
+  transition:opacity .6s ease;
+}
+#loader .loader-brand{
+  font-family:'Noto Serif TC',serif;font-weight:600;
+  font-size:clamp(1.7rem,4.5vw,2.6rem);
+  letter-spacing:.55em;margin-right:-.55em;
+  color:var(--ink);
+  animation:loaderPulse 1.5s ease-in-out infinite;
+}
+@keyframes loaderPulse{
+  0%,100%{opacity:.3}
+  50%{opacity:1}
+}
+#loader.done{opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){
+  #loader .loader-brand{animation:none}
 }

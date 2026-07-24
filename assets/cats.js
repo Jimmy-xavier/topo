@@ -1,18 +1,45 @@
 /* ============================================================
    cats.js — 首頁主視覺:貓咪先鋒攀登(lead climbing)
-   v3:岩壁佔畫面一半以上、路線加長、貓咪放大;
-   確保貓身旁有繩堆(隨攀登越變越少)、持續注視攀登者、
-   有節奏的給繩動作;登頂平台下修,慶祝時整隻貓可見。
+
+   結構總覽:
+   ┌ CONFIG ─────── 可調參數(縮放、岩壁比例、各階段秒數…)集中一處
+   ├ 幾何 ───────── resize / posAt:岩壁邊緣與沿壁取點
+   ├ 背景 ───────── drawStaticScene(靜態,快取)/ drawClouds(動態雲鳥)
+   │                buildBackdrop:靜態背景+岩壁只畫一次存進離屏 canvas
+   ├ 繪圖零件 ───── bubble/shadow/drawATC/rope/catBody/catHead/limb…
+   ├ 貓姿勢 ─────── climberClimb/Hang/Mantle、spotCat/belayCat/sitCat
+   │                (身體共用 catBody,差異靠參數)
+   ├ 狀態機 ─────── PHASES 八階段;frame(t) 依時間算出此刻該畫什麼
+   └ 啟動 ───────── resize + requestAnimationFrame 迴圈
+
+   優化:靜態背景圖層快取、身體畫法共用、參數集中、動畫行為不變。
    ============================================================ */
 (() => {
   'use strict';
   const canvas = document.getElementById('cat-hero');
   if (!canvas) return;
-  const ctx = canvas.getContext('2d');
+  let ctx = canvas.getContext('2d');   // let:buildBackdrop 會暫時指向離屏 canvas
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-  const SC = 1.3;                       // 貓咪整體放大倍率
+  // ── 可調參數集中區(想微調動畫,改這裡就好)──
+  const CONFIG = {
+    catScale:      { wide: 1.3, narrow: 1.02 },  // 貓咪縮放(桌機 / 窄螢幕)
+    narrowW:       640,                          // 窄螢幕分界(px)
+    wall:          { baseX: .76, baseY: .99, topX: .66, topY: .23 }, // 岩壁四角(比例)
+    fujiX:         { wide: .45, narrow: .32 },   // 富士山水平位置(比例)
+    climbSteps:    11,                           // 攀爬分幾步
+    talkDelay:     .11,                          // 對話說完才起攀(佔 climb 比例)
+    phases: {                                    // 各階段持續時間(毫秒)
+      climb: 16000, mantle: 3200, summit: 3200, edge: 4800,
+      lower: 8500, untie: 3200, pull: 5200, rest: 2600
+    }
+  };
+
+  let SC = CONFIG.catScale.wide;      // 貓咪縮放(resize 時依螢幕寬更新)
   let W = 0, H = 0, dpr = 1;
+  let posOrange = null, posGrey = null;   // 兩隻貓的當前位置(彩蛋點擊用)
+  let meow = null;                        // {who, until}
+  const chalk = [];                       // 岩壁上的粉筆掌印
   let edge = [], wallOut = { x: -1, y: 0 };
   let bolts = [], clouds = [];
 
@@ -35,12 +62,13 @@
   function resize() {
     dpr = Math.min(devicePixelRatio || 1, 2);
     W = canvas.clientWidth; H = canvas.clientHeight;
+    SC = W < CONFIG.narrowW ? CONFIG.catScale.narrow : CONFIG.catScale.wide;
     canvas.width = W * dpr; canvas.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // 外傾壁:底部約在畫面中線,頂部再往左傾出 → 岩體佔右半以上
-    const bx = W * 0.76, by = H * 0.99;
-    const tx = W * 0.66, ty = H * 0.23;
+    const bx = W * CONFIG.wall.baseX, by = H * CONFIG.wall.baseY;
+    const tx = W * CONFIG.wall.topX,  ty = H * CONFIG.wall.topY;
     const dx = tx - bx, dy = ty - by, len = Math.hypot(dx, dy);
     wallOut = { x: dy / len, y: -dx / len };
 
@@ -64,6 +92,7 @@
       { x: W * .30, y: H * .28, s: 0.7, v: 12 },
       { x: W * .04, y: H * .44, s: 0.55, v: 16 }
     ];
+    backdrop = null;                   // 尺寸變了 → 作廢快取,下一格重建
   }
 
   function posAt(p, off = 0) {
@@ -82,22 +111,14 @@
   const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
   /* ---------- 場景 ---------- */
-  function drawScene(t) {
+  // 靜態背景(天空、太陽、富士山、丘陵、草地、露營車):內容不隨時間變,
+  // 由 buildBackdrop() 預先畫進離屏 canvas 快取,每格只需貼一次 → 省效能。
+  function drawStaticScene() {
     const sky = ctx.createLinearGradient(0, 0, 0, H);
     sky.addColorStop(0, C.skyTop); sky.addColorStop(1, C.skyBot);
     ctx.fillStyle = sky; ctx.fillRect(0, 0, W, H);
 
-    ctx.fillStyle = C.cloud;
-    clouds.forEach(c => {
-      const cx = (c.x + t * .001 * c.v) % (W + 140) - 70;
-      ctx.globalAlpha = .85;
-      [[0, 0, 22], [20, 4, 16], [-20, 5, 15]].forEach(([ox, oy, r]) => {
-        ctx.beginPath(); ctx.arc(cx + ox * c.s, c.y + oy * c.s, r * c.s, 0, 7); ctx.fill();
-      });
-    });
-    ctx.globalAlpha = 1;
-
-    // 太陽最後畫,雲飄過也遮不住
+    // 太陽
     ctx.fillStyle = C.sun; ctx.globalAlpha = .9;
     ctx.beginPath(); ctx.arc(W * .09, H * .14, 24, 0, 7); ctx.fill();
     ctx.globalAlpha = .22;
@@ -105,7 +126,7 @@
     ctx.globalAlpha = 1;
 
     // 富士山(遠眺:小、低、帶霧)
-    const fx0 = W * .45, fpy = H * .46;
+    const fx0 = W * (W < CONFIG.narrowW ? CONFIG.fujiX.narrow : CONFIG.fujiX.wide), fpy = H * .46;
     ctx.globalAlpha = .8;
     ctx.fillStyle = '#c3d0de';
     ctx.beginPath();
@@ -139,17 +160,8 @@
     ctx.lineTo(W * .10, H * .71); ctx.lineTo(W * .22, H * .78);
     ctx.lineTo(W * .36, H * .69); ctx.lineTo(W * .50, H * .82);
     ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#7c828d'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
-    [[.20, .26], [.27, .21]].forEach(([fx, fy], i) => {
-      const bxp = W * fx + Math.sin(t * .0006 + i) * 14;
-      const byp = H * fy + Math.cos(t * .0008 + i) * 6;
-      const f = Math.sin(t * .01 + i * 2) * 3;
-      ctx.beginPath();
-      ctx.moveTo(bxp - 6, byp - f); ctx.quadraticCurveTo(bxp, byp + 3, bxp + 6, byp - f);
-      ctx.stroke();
-    });
 
-    // 草地、小花、帳篷
+    // 草地、小花
     ctx.fillStyle = C.grass; ctx.fillRect(0, H * .82, W, H * .18);
     ctx.fillStyle = C.grassDark;
     for (let x = 8; x < W; x += 26) {
@@ -162,8 +174,11 @@
       ctx.fillStyle = ['#f4a5a5', '#f4d9a5', '#ffffff'][i % 3];
       ctx.beginPath(); ctx.arc(fx, fy, 3, 0, 7); ctx.fill();
     }
-    // 露營車(左側:攀岩仔的移動基地)
-    const vx = W * .22, vy = H * .875;
+    // 露營車(左側:攀岩仔的移動基地;窄螢幕縮小左移)
+    ctx.save();
+    ctx.translate(W * (W < CONFIG.narrowW ? .15 : .22), H * .875);
+    if (W < CONFIG.narrowW) ctx.scale(.68, .68);
+    const vx = 0, vy = 0;
     shadow(vx, vy + 8, 62);
     ctx.fillStyle = '#f7f3ea';
     ctx.beginPath(); ctx.roundRect(vx - 58, vy - 46, 116, 46, 8); ctx.fill();
@@ -185,6 +200,44 @@
       ctx.fillStyle = '#cfd4da';
       ctx.beginPath(); ctx.arc(vx + ox, vy - 1, 4, 0, 7); ctx.fill();
     });
+    ctx.restore();
+  }
+
+  // 動態天空層(雲、飛鳥):會隨時間飄動,每格重畫
+  function drawClouds(t) {
+    ctx.fillStyle = C.cloud;
+    clouds.forEach(c => {
+      const cx = (c.x + t * .001 * c.v) % (W + 140) - 70;
+      ctx.globalAlpha = .85;
+      [[0, 0, 22], [20, 4, 16], [-20, 5, 15]].forEach(([ox, oy, r]) => {
+        ctx.beginPath(); ctx.arc(cx + ox * c.s, c.y + oy * c.s, r * c.s, 0, 7); ctx.fill();
+      });
+    });
+    ctx.globalAlpha = 1;
+    // 飛鳥
+    ctx.strokeStyle = '#7c828d'; ctx.lineWidth = 1.6; ctx.lineCap = 'round';
+    [[.20, .26], [.27, .21]].forEach(([fx, fy], i) => {
+      const bxp = W * fx + Math.sin(t * .0006 + i) * 14;
+      const byp = H * fy + Math.cos(t * .0008 + i) * 6;
+      const f = Math.sin(t * .01 + i * 2) * 3;
+      ctx.beginPath();
+      ctx.moveTo(bxp - 6, byp - f); ctx.quadraticCurveTo(bxp, byp + 3, bxp + 6, byp - f);
+      ctx.stroke();
+    });
+  }
+
+  // 離屏快取:靜態背景 + 岩壁只畫一次,存進 backdrop,每格直接貼上
+  let backdrop = null;
+  function buildBackdrop() {
+    backdrop = document.createElement('canvas');
+    backdrop.width = W * dpr; backdrop.height = H * dpr;
+    const bx = backdrop.getContext('2d');
+    // 讓靜態繪圖暫時畫到離屏 context
+    const realCtx = ctx;
+    ctx = bx; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawStaticScene();
+    drawRock();
+    ctx = realCtx;
   }
 
   function drawRock() {
@@ -354,12 +407,8 @@
     if (reach)                                    // 前掌伸向固定點快扣
       limb(cx2 + Math.cos(ang) * 12, cy2 + Math.sin(ang) * 12 - 4,
         reach.x, reach.y, C.orangeDark, 4.5);
-    ctx.save(); ctx.translate(cx2, cy2); ctx.rotate(ang);
-    ctx.fillStyle = C.orange;
-    ctx.beginPath(); ctx.ellipse(0, 0, 15 * SC, 10 * SC, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = C.orangeDark;
-    [-6, 1, 8].forEach(sx => ctx.fillRect(sx * SC, -8 * SC, 3 * SC, 6 * SC));
-    ctx.restore();
+    catBody(cx2, cy2, ang, C.orange,
+      { rx: 15, ry: 10, stripeCol: C.orangeDark, stripes: [-6, 1, 8], sy: -8, sh: 6 });
     limb(cx2 + Math.cos(ang) * 10, cy2 + Math.sin(ang) * 10,
       cx2 + Math.cos(ang) * 17, cy2 + 9, C.orangeDark, 4.5);
     limb(cx2 - Math.cos(ang) * 8, cy2 - Math.sin(ang) * 8,
@@ -367,6 +416,7 @@
     harness(cx2, cy2, ang, 20);
     catHead(cx2 + Math.cos(ang) * 17 * SC, cy2 + Math.sin(ang) * 17 * SC,
       8.5 * SC, C.orange, ang, C.helmetA);
+    posOrange = { x: cx2, y: cy2 };
     return { x: cx2, y: cy2 + 3 };
   }
 
@@ -453,6 +503,23 @@
   }
 
   /* ---------- 貓件庫(尺寸 × SC) ---------- */
+  // 共用:一具貓身體(旋轉橢圓 + 可選虎斑條)。姿勢差異靠參數,不再各寫一份。
+  //   rx,ry  橢圓半徑(未含 SC);ang 旋轉;stripeCol 有值才畫虎斑;
+  //   stripes 虎斑的 x 偏移陣列;sy,sh 虎斑的起始 y 與高度(未含 SC)
+  function catBody(cx, cy, ang, col, opt = {}) {
+    const rx = opt.rx ?? 16, ry = opt.ry ?? 11;
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(ang);
+    ctx.fillStyle = col;
+    ctx.beginPath(); ctx.ellipse(0, 0, rx * SC, ry * SC, 0, 0, 7); ctx.fill();
+    if (opt.stripeCol) {
+      ctx.fillStyle = opt.stripeCol;
+      const sy = opt.sy ?? -9, sh = opt.sh ?? 7;
+      (opt.stripes ?? [-7, 0, 7]).forEach(sx =>
+        ctx.fillRect(sx * SC, sy * SC, 3 * SC, sh * SC));
+    }
+    ctx.restore();
+  }
+
   function catHead(x, y, r, col, lookA, helmet) {
     ctx.fillStyle = col;
     [[-.78, -.35], [.78, -.35]].forEach(([ex, ey]) => {
@@ -533,16 +600,13 @@
     limb(bodyC.x - Math.cos(ang) * 8, bodyC.y - Math.sin(ang) * 8, dn1.x, dn1.y, C.orange);
     limb(bodyC.x - Math.cos(ang) * 11, bodyC.y - Math.sin(ang) * 11, dn2.x, dn2.y, C.orangeDark);
 
-    ctx.save(); ctx.translate(bodyC.x + wob * .3, bodyC.y); ctx.rotate(ang);
-    ctx.fillStyle = C.orange;
-    ctx.beginPath(); ctx.ellipse(0, 0, 16 * SC, 11 * SC, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = C.orangeDark;
-    [-7, 0, 7].forEach(sx => ctx.fillRect(sx * SC, -9 * SC, 3 * SC, 7 * SC));
-    ctx.restore();
+    catBody(bodyC.x + wob * .3, bodyC.y, ang, C.orange,
+      { rx: 16, ry: 11, stripeCol: C.orangeDark });
 
     const tie = harness(bodyC.x, bodyC.y, ang, 22);
     catHead(bodyC.x + Math.cos(ang) * 19 * SC, bodyC.y + Math.sin(ang) * 19 * SC + wob * .4,
       9 * SC, C.orange, ang, C.helmetA);
+    posOrange = { x: bodyC.x, y: bodyC.y };
     return tie;
   }
 
@@ -551,12 +615,8 @@
     const rot = -.20 + sway * .008;              // 只微微後仰
     tail(cx - 8 * SC, cy + 8, -1, C.orange, Math.sin(t * .007) * 4);
     // 身體:直立橢圓,像坐在吊帶裡
-    ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot);
-    ctx.fillStyle = C.orange;
-    ctx.beginPath(); ctx.ellipse(0, 0, 11 * SC, 14 * SC, 0, 0, 7); ctx.fill();
-    ctx.fillStyle = C.orangeDark;
-    [-5, 2].forEach(sx => ctx.fillRect(sx * SC, -7 * SC, 3 * SC, 6 * SC));
-    ctx.restore();
+    catBody(cx, cy, rot, C.orange,
+      { rx: 11, ry: 14, stripeCol: C.orangeDark, stripes: [-5, 2], sy: -7, sh: 6 });
     const tie = harness(cx, cy + 4, Math.PI / 2 + rot, 18);
     // 後腿自然垂放、輕輕晃
     limb(cx - 3, cy + 10, cx - 5 + Math.sin(t * .006) * 2, cy + 22 * SC, C.orange, 4.5);
@@ -564,6 +624,7 @@
     // 一掌輕扶胸前的繩
     limb(cx + 3, cy - 6, cx + 5, cy - 15 * SC, C.orangeDark, 4.5);
     catHead(cx, cy - 17 * SC, 8.5 * SC, C.orange, -1.6, C.helmetA);
+    posOrange = { x: cx, y: cy };
     return { x: cx, y: cy + 4 };
   }
 
@@ -573,8 +634,7 @@
     tail(x - 9 * SC, y + 2, -1, C.grey, Math.sin(t * .004) * 3);
     limb(x - 4, y + 9, x - 8, y + 19 * SC, C.greyLeg, 4.5);    // 後腿站立(深)
     limb(x + 4, y + 9, x + 8, y + 19 * SC, C.greyLeg, 4.5);
-    ctx.fillStyle = C.grey;
-    ctx.beginPath(); ctx.ellipse(x, y, 10 * SC, 14 * SC, 0, 0, 7); ctx.fill();
+    catBody(x, y, 0, C.grey, { rx: 10, ry: 14 });
     harness(x, y + 3, Math.PI / 2, 18);
     const wob = Math.sin(t * .005) * .8;                       // 雙掌高舉,穩定戒備
     const pL = { x: x + 11 * SC, y: y - 18 * SC + wob };
@@ -584,6 +644,7 @@
     const dev = { x: x + 8 * SC, y: y + 6 * SC };
     drawATC(dev.x, dev.y);                                     // 確保器一直掛在吊帶上
     catHead(x + 2, y - 21 * SC, 9 * SC, C.grey, lookA, C.helmetB);
+    posGrey = { x, y };
     return { pL, pR, dev };
   }
 
@@ -597,8 +658,7 @@
     tail(x - 9 * SC, y + 4, -1, C.grey, Math.sin(t * .004) * 3);
     limb(x - 4, y + 9, x - 8, y + 19 * SC, C.greyLeg, 4.5);    // 站立後腿(深)
     limb(x + 4, y + 9, x + 8, y + 19 * SC, C.greyLeg, 4.5);
-    ctx.fillStyle = C.grey;
-    ctx.beginPath(); ctx.ellipse(x, y, 10 * SC, 14 * SC, 0, 0, 7); ctx.fill();
+    catBody(x, y, 0, C.grey, { rx: 10, ry: 14 });
     harness(x, y + 3, Math.PI / 2, 18);
 
     const device = { x: x + 8 * SC, y: y + 4 * SC };
@@ -635,6 +695,7 @@
     drawATC(device.x, device.y);
 
     catHead(x + 1, y - 21 * SC, 9.5 * SC, C.grey, lookA, C.helmetB);
+    posGrey = { x, y };
     // 一般確保:主繩從導繩手出去(frame 接著畫微笑曲線到岩壁)
     // handsDown:兩手在下,主繩直接從 ATC 頂端出去
     return opt.handsDown ? { x: device.x, y: device.y - 6 }
@@ -652,13 +713,10 @@
     if (opt.pile !== undefined) ropePile(x - 30 * SC, y + 12 * SC, opt.pile);
 
     tail(x - 12 * SC, y + 4, -1, col, Math.sin(t * .004) * 4);
-    ctx.fillStyle = col;
-    ctx.beginPath(); ctx.ellipse(x, y, 13 * SC, 15 * SC, 0, 0, 7); ctx.fill();
-    if (col === C.orange) {
-      ctx.fillStyle = C.orangeDark;
-      [-6, 1].forEach(sx => ctx.fillRect(x + sx * SC, y - 4 * SC, 3 * SC, 7 * SC));
-    }
-    ctx.fillStyle = colD;
+    catBody(x, y, 0, col, col === C.orange
+      ? { rx: 13, ry: 15, stripeCol: C.orangeDark, stripes: [-6, 1], sy: -4, sh: 7 }
+      : { rx: 13, ry: 15 });
+    ctx.fillStyle = colD;                                  // 前腳基座
     ctx.beginPath(); ctx.ellipse(x, y + 8 * SC, 9 * SC, 6 * SC, 0, 0, 7); ctx.fill();
     harness(x, y + 5 * SC, Math.PI / 2, 20);
 
@@ -705,6 +763,7 @@
     catHead(x + Math.cos(lookA) * 3.5,
       y - 22 * SC + Math.max(-1, Math.sin(lookA) * 2),
       9.5 * SC, col, lookA, col === C.orange ? C.helmetA : C.helmetB);
+    if (col === C.orange) posOrange = { x, y }; else posGrey = { x, y };
     return device;
   }
 
@@ -722,24 +781,57 @@
     }
   }
 
+  // 粉筆掌印(彩蛋:點岩壁留下)
+  function chalkPrint(m) {
+    ctx.fillStyle = 'rgba(255,255,255,' + m.a + ')';
+    ctx.beginPath(); ctx.arc(m.x, m.y, 3.2, 0, 7); ctx.fill();
+    [[-3, -4], [-1, -5.4], [1.4, -5.2], [3.4, -3.6]].forEach(([ox, oy]) => {
+      ctx.beginPath(); ctx.arc(m.x + ox, m.y + oy, 1.3, 0, 7); ctx.fill();
+    });
+  }
+
+  // 彩蛋點擊:點貓咪 →「にゃー」;點岩壁 → 留下粉筆掌印
+  canvas.addEventListener('pointerdown', ev => {
+    const r = canvas.getBoundingClientRect();
+    const x = ev.clientX - r.left, y = ev.clientY - r.top;
+    const near = p2 => p2 && Math.hypot(p2.x - x, p2.y - y) < 44;
+    if (near(posOrange)) {
+      meow = { who: 'o', until: performance.now() + 1200 };
+    } else if (near(posGrey)) {
+      meow = { who: 'g', until: performance.now() + 1200 };
+    } else {
+      // 是否點在岩壁上(依邊緣線內插判定)
+      const pr = (H * .99 - y) / (H * .99 - H * .23);
+      const ex = W * .76 + (W * .66 - W * .76) * Math.min(Math.max(pr, 0), 1);
+      if (x > ex - 6 || y < H * .23) {
+        chalk.push({ x, y, a: .7 });
+        if (chalk.length > 24) chalk.shift();
+      }
+    }
+  });
+
   /* ---------- 狀態機 ---------- */
   let belayOff = 0;                     // 確保貓前後位移(時間平滑,避免閃退)
 
-  const PHASES = [
-    { name: 'climb', dur: 16000 },     // 放慢,讓確保細節看得見
-    { name: 'mantle', dur: 3200 },     // 翻上平台 → 扣固定點 → 走到樹旁
-    { name: 'summit', dur: 3200 },
-    { name: 'edge', dur: 4800 },       // 走回崖邊、坐上繩(更慢)
-    { name: 'lower', dur: 8500 },
-    { name: 'untie', dur: 3200 },      // 著地走回 → 解除確保
-    { name: 'pull', dur: 5200 },       // 藍貓退開 → 橘貓接手抽繩 → 落繩
-    { name: 'rest', dur: 2600 }
-  ];
+  // 狀態機:一輪攀登的八個階段(時間定義在 CONFIG.phases)
+  //   climb  先鋒攀登(含開場對話 → 起攀 → 逐一掛快扣)
+  //   mantle 翻上平台 → 扣固定點雙快扣 → 走到樹旁
+  //   summit 登頂歡呼
+  //   edge   說「降ろしてください」→ 走回崖邊坐上繩、確保貓後退拉緊
+  //   lower  下放
+  //   untie  著地 → 解除確保 → 空手走回夥伴
+  //   pull   灰貓退開 → 橘貓接手抽繩 →「ロープダウン」→ 繩落下
+  //   rest   收繩休息,銜接下一輪
+  const PHASES = ['climb','mantle','summit','edge','lower','untie','pull','rest']
+    .map(name => ({ name, dur: CONFIG.phases[name] }));
   const TOTAL = PHASES.reduce((s, p) => s + p.dur, 0);
 
   function frame(t) {
-    drawScene(t);
-    drawRock();
+    // 靜態背景(天空/山/草/露營車/岩壁)從快取一次貼上,不逐格重畫
+    if (!backdrop) buildBackdrop();
+    ctx.drawImage(backdrop, 0, 0, W, H);
+    drawClouds(t);                     // 雲、飛鳥(動態)
+    chalk.forEach(chalkPrint);         // 彩蛋粉筆印
 
     let tt = t % TOTAL, phase = 'climb', u = 0;
     for (const ph of PHASES) {
@@ -750,7 +842,7 @@
     // 已扣繩的快扣隨動作微晃:攀爬/下放時晃幅大,靜態階段輕微
     let pClimb = 1;
     if (phase === 'climb') {
-      const st = 11, s0 = Math.max(0, (u - .11) / .89) * st, i0 = Math.floor(s0);
+      const st = CONFIG.climbSteps, s0 = Math.max(0, (u - CONFIG.talkDelay) / (1 - CONFIG.talkDelay)) * st, i0 = Math.floor(s0);
       pClimb = 0.10 + (i0 + ease(Math.min(s0 - i0, 1))) / st * (0.99 - 0.10);
     }
     const swayAmp = (phase === 'climb' || phase === 'lower' || phase === 'pull') ? 2.4
@@ -766,11 +858,11 @@
     });
 
     const anchor = drawAnchor();
-    const belayXY = { x: edge[0].x - 86, y: H * .885 };
+    const belayXY = { x: edge[0].x - (W < 640 ? 60 : 86), y: H * .885 };
 
     if (phase === 'climb') {
-      const uc = Math.max(0, (u - .11) / .89);   // 對話說完才起攀
-      const steps = 11, s = uc * steps, i = Math.floor(s);
+      const uc = Math.max(0, (u - CONFIG.talkDelay) / (1 - CONFIG.talkDelay));   // 對話說完才起攀
+      const steps = CONFIG.climbSteps, s = uc * steps, i = Math.floor(s);
       const p = 0.10 + (i + ease(Math.min(s - i, 1))) / steps * (0.99 - 0.10);
       const nearBolt = bolts.find(b => b.p - p > 0 && b.p - p < .06);
       const clipped = bolts.filter(b => b.p <= p + .015);
@@ -1000,13 +1092,21 @@
       sitCat(belayXY.x, belayXY.y, C.grey, C.greyDark, t, { lookA: .3 });
       sitCat(belayXY.x + 52 * SC, belayXY.y + 2, C.orange, C.orangeDark, t, { lookA: -2.8 });
     }
+
+    // 彩蛋:「にゃー」跟著被點的那隻貓(最上層)
+    if (meow) {
+      if (performance.now() < meow.until) {
+        const p2 = meow.who === 'o' ? posOrange : posGrey;
+        if (p2) bubble(p2.x + 6, p2.y - 36, 'にゃー');
+      } else meow = null;
+    }
   }
 
   resize();
   addEventListener('resize', resize);
 
   if (reduced) {
-    frame(6500);
+    frame(6500);   // 靜態單格(內部已改用快取背景)
   } else {
     const loop = t => { frame(t); requestAnimationFrame(loop); };
     requestAnimationFrame(loop);
