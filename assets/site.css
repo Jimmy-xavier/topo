@@ -313,20 +313,6 @@ article .carousel{position:relative;margin:1.8em 0}
   .hero-cap{font-size:.68rem;letter-spacing:.12em;text-align:center}
 }
 
-/* ── 爬繩貓(閱讀進度)── */
-.rope-cat{
-  position:fixed;top:50%;transform:translateY(-50%);
-  right:calc((100vw - 72rem) / 2 - 3.4rem);   /* 回到右側外緣 */
-  width:72px;height:288px;z-index:20;pointer-events:none;
-}
-.rope-cat canvas{width:72px;height:288px}
-@media (max-width:1200px){
-  .rope-cat{right:.4rem}
-}
-@media (max-width:900px){
-  .rope-cat{right:auto;left:.3rem}
-}
-
 /* ── 載入畫面(TOPO splash)── */
 #loader{
   position:fixed;inset:0;z-index:999;
